@@ -22,6 +22,7 @@ from deepgo.utils import Ontology, propagate_annots
 from multiprocessing import Pool
 from functools import partial
 from deepgo.metrics import compute_roc
+import wandb
 
 
 @ck.command()
@@ -51,6 +52,19 @@ from deepgo.metrics import compute_roc
     '--device', '-d', default='cuda:0',
     help='Device')
 def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, device):
+    wandb.init(
+        project='go-annotation',
+        name=f'{model_name}_{ont}_{test_data_name}',
+        config={
+            'epochs': epochs,
+            'batch_size': batch_size,
+            'model_name': model_name,
+            'ontology': ont,
+            'test_data': test_data_name,
+            'device': device,
+        }
+    )
+
     go_file = f'{data_root}/go.obo'
     model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
@@ -131,6 +145,14 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                 valid_loss /= valid_steps
                 roc_auc = compute_roc(valid_labels, preds)
                 print(f'Epoch {epoch}: Loss - {train_loss}, Valid loss - {valid_loss}, AUC - {roc_auc}')
+
+                wandb.log({
+                    'epoch': epoch,
+                    'train_loss': train_loss,
+                    'valid_loss': valid_loss,
+                    'valid_auc': roc_auc
+                })
+
             if valid_loss < best_loss:
                 best_loss = valid_loss
                 print('Saving model')
@@ -159,6 +181,11 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
         roc_auc = compute_roc(test_labels, preds)
         print(f'Test Loss - {test_loss}, AUC - {roc_auc}')
 
+        wandb.log({
+            'test_loss': test_loss,
+            'test_auc': roc_auc
+        })
+
     preds = list(preds)
     # Propagate scores using ontology structure
     with Pool(32) as p:
@@ -167,7 +194,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
     test_df['preds'] = preds
 
     test_df.to_pickle(out_file)
-    
+    wandb.finish()
+
 
 if __name__ == '__main__':
     main()
