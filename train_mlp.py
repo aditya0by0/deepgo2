@@ -53,7 +53,7 @@ import wandb
     help='Device')
 def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, device):
     wandb.init(
-        project='go-annotation',
+        project='deepgo2',
         name=f'{model_name}_{ont}_{test_data_name}',
         config={
             'epochs': epochs,
