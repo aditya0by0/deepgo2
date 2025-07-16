@@ -209,14 +209,14 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                     'train_loss': train_loss,
                     'train macro auc (torchmetric)': train_tm_auc_roc_macro,
                     'train micro auc (torchmetric)': train_tm_auc_roc_micro,
-                    'train_micro': train_f1_micro_score,
-                    'train_macro': train_f1_macro_score,
+                    'train_micro_f1': train_f1_micro_score,
+                    'train_macro_f1': train_f1_macro_score,
                     'valid_loss': valid_loss,
                     'valid_auc (deepgo)': valid_roc_auc,
                     'valid macro auc (torchmetric)': valid_tm_auc_roc_macro,
                     'valid micro auc (torchmetric)': valid_tm_auc_roc_micro,
-                    'valid_macro': valid_f1_macro_score,
-                    'valid_micro': valid_f1_micro_score,
+                    'valid_macro_f1': valid_f1_macro_score,
+                    'valid_micro_f1': valid_f1_micro_score,
                 })
 
             if valid_loss < best_loss:
@@ -274,8 +274,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
             'test_auc (deepgo)': roc_auc,
             'test macro auc (torchmetric)': test_tm_auc_roc_macro,
             'test micro auc (torchmetric)': test_tm_auc_roc_micro,
-            'test_micro': test_f1_micro_score,
-            'test_macro': test_f1_macro_score,
+            'test_micro_f1': test_f1_micro_score,
+            'test_macro_f1': test_f1_macro_score,
         })
 
     preds = list(preds)
