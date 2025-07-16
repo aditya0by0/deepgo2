@@ -141,8 +141,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                     train_preds = np.append(train_preds, logits.detach().cpu().numpy())
 
             train_roc_auc = compute_roc(train_labels, train_preds)
-            train_preds_tensor = th.tensor(train_preds)
-            train_true_tensor = th.tensor(train_labels)
+            train_preds_tensor = th.tensor(train_preds.flatten())
+            train_true_tensor = th.tensor(train_labels.flatten())
             f1_micro.reset()
             f1_macro.reset()
             train_f1_micro_score = f1_micro(train_preds_tensor, train_true_tensor).item()
@@ -167,8 +167,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                 valid_loss /= valid_steps
                 valid_roc_auc = compute_roc(valid_labels, preds)
 
-                valid_preds_tensor = th.tensor(preds)
-                valid_true_tensor = th.tensor(valid_labels)
+                valid_preds_tensor = th.tensor(preds.flatten())
+                valid_true_tensor = th.tensor(valid_labels.flatten())
                 f1_micro.reset()
                 f1_macro.reset()
                 valid_f1_micro_score = f1_micro(valid_preds_tensor, valid_true_tensor).item()
@@ -225,8 +225,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
         preds = np.concatenate(preds)
         roc_auc = compute_roc(test_labels, preds)
 
-        test_preds_tensor = th.tensor(preds)
-        test_true_tensor = th.tensor(test_labels)
+        test_preds_tensor = th.tensor(preds.flatten())
+        test_true_tensor = th.tensor(test_labels.flatten())
         f1_micro.reset()
         f1_macro.reset()
         test_f1_micro_score = f1_micro(test_preds_tensor, test_true_tensor).item()
