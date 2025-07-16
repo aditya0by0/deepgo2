@@ -1,33 +1,32 @@
+import copy
+import csv
+import math
+import random
+from functools import partial
+from itertools import cycle
+from multiprocessing import Pool
+
 import click as ck
+import dgl
+import numpy as np
 import pandas as pd
 import torch as th
-import numpy as np
-from torch import nn
-from torch.nn import functional as F
-from torch import optim
-from sklearn.metrics import roc_curve, auc, matthews_corrcoef
-import copy
-from torch.utils.data import DataLoader, IterableDataset, TensorDataset
-from itertools import cycle
-import math
-from deepgo.aminoacids import to_onehot, MAXLEN
 from dgl.nn import GraphConv
-import dgl
-from deepgo.torch_utils import FastTensorDataLoader
-import csv
+from sklearn.metrics import auc, matthews_corrcoef, roc_curve
+from torch import nn, optim
+from torch.nn import functional as F
 from torch.optim.lr_scheduler import MultiStepLR
-from deepgo.models import MLPModel
-from deepgo.data import load_data
-from deepgo.utils import Ontology, propagate_annots
-from multiprocessing import Pool
-from functools import partial
-from deepgo.metrics import compute_roc
-import wandb
-from epoch_metrics import MacroF1
-from torchmetrics.classification import MultilabelF1Score
-from torchmetrics.classification import MultilabelAUROC 
+from torch.utils.data import DataLoader, IterableDataset, TensorDataset
+from torchmetrics.classification import MultilabelAUROC, MultilabelF1Score
 
-import random
+import wandb
+from deepgo.aminoacids import MAXLEN, to_onehot
+from deepgo.data import load_data
+from deepgo.metrics import compute_roc
+from deepgo.models import MLPModel
+from deepgo.torch_utils import FastTensorDataLoader
+from deepgo.utils import Ontology, propagate_annots
+from epoch_metrics import MacroF1
 
 
 @ck.command()
