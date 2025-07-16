@@ -145,9 +145,9 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                     loss.backward()
                     optimizer.step()
                     train_loss += loss.detach().item()
-                    f1_macro.update(preds=logits, labels=batch_labels)
-                    f1_micro.update(preds=logits, labels=batch_labels)
-                    tm_auc_roc.update(preds=logits, labels=batch_labels)
+                    f1_macro.update(preds=logits, labels=batch_labels.long())
+                    f1_micro.update(preds=logits, target=batch_labels.long())
+                    tm_auc_roc.update(preds=logits, target=batch_labels.long())
 
             train_f1_micro_score = f1_micro.compute().item()
             train_f1_macro_score = f1_macro.compute().item()
@@ -172,9 +172,9 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                         batch_loss = F.binary_cross_entropy(logits, batch_labels)
                         valid_loss += batch_loss.detach().item()
                         preds = np.append(preds, logits.detach().cpu().numpy())
-                        f1_macro.update(preds=logits, labels=batch_labels)
-                        f1_micro.update(preds=logits, labels=batch_labels)
-                        tm_auc_roc.update(preds=logits, labels=batch_labels)
+                        f1_macro.update(preds=logits, labels=batch_labels.long())
+                        f1_micro.update(preds=logits, target=batch_labels.long())
+                        tm_auc_roc.update(preds=logits, target=batch_labels.long())
                 valid_loss /= valid_steps
                 valid_roc_auc = compute_roc(valid_labels, preds)
 
@@ -234,9 +234,9 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                 batch_loss = F.binary_cross_entropy(logits, batch_labels)
                 test_loss += batch_loss.detach().cpu().item()
                 preds.append(logits.detach().cpu().numpy())
-                f1_macro.update(preds=logits, labels=batch_labels)
-                f1_micro.update(preds=logits, labels=batch_labels)
-                tm_auc_roc.update(preds=logits, labels=batch_labels)
+                f1_macro.update(preds=logits, labels=batch_labels.long())
+                f1_micro.update(preds=logits, target=batch_labels.long())
+                tm_auc_roc.update(preds=logits, target=batch_labels.long())
             test_loss /= test_steps
         preds = np.concatenate(preds)
         roc_auc = compute_roc(test_labels, preds)
