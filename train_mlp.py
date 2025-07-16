@@ -122,7 +122,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
 
     f1_micro = MultilabelF1Score(num_labels=n_terms, average="micro").to(device=device)
     f1_macro = MacroF1(num_labels=n_terms).to(device=device)
-    tm_auc_roc = MultilabelAUROC(num_labels=n_terms).to(device=device)
+    tm_auc_roc_macro = MultilabelAUROC(num_labels=n_terms).to(device=device)
+    tm_auc_roc_micro = MultilabelAUROC(num_labels=n_terms, average="micro").to(device=device)
     
     best_loss = 10000.0
     if not load:
@@ -133,7 +134,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
             train_steps = int(math.ceil(len(train_labels) / batch_size))
             f1_micro.reset()
             f1_macro.reset()
-            tm_auc_roc.reset()
+            tm_auc_roc_macro.reset()
+            tm_auc_roc_micro.reset()
             with ck.progressbar(length=train_steps, show_pos=True) as bar:
                 for batch_features, batch_labels in train_loader:
                     bar.update(1)
@@ -147,11 +149,13 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                     train_loss += loss.detach().item()
                     f1_macro.update(preds=logits, labels=batch_labels.long())
                     f1_micro.update(preds=logits, target=batch_labels.long())
-                    tm_auc_roc.update(preds=logits, target=batch_labels.long())
+                    tm_auc_roc_macro.update(preds=logits, target=batch_labels.long())
+                    tm_auc_roc_micro.update(preds=logits, target=batch_labels.long())
 
             train_f1_micro_score = f1_micro.compute().item()
             train_f1_macro_score = f1_macro.compute().item()
-            train_tm_auc_roc = tm_auc_roc.compute().item()
+            train_tm_auc_roc_macro = tm_auc_roc_macro.compute().item()
+            train_tm_auc_roc_micro = tm_auc_roc_micro.compute().item()
             train_loss /= train_steps
             
             print('Validation')
@@ -162,7 +166,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                 preds = []
                 f1_micro.reset()
                 f1_macro.reset()
-                tm_auc_roc.reset()
+                tm_auc_roc_macro.reset()
+                tm_auc_roc_micro.reset()
                 with ck.progressbar(length=valid_steps, show_pos=True) as bar:
                     for batch_features, batch_labels in valid_loader:
                         bar.update(1)
@@ -174,23 +179,27 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                         preds = np.append(preds, logits.detach().cpu().numpy())
                         f1_macro.update(preds=logits, labels=batch_labels.long())
                         f1_micro.update(preds=logits, target=batch_labels.long())
-                        tm_auc_roc.update(preds=logits, target=batch_labels.long())
+                        tm_auc_roc_macro.update(preds=logits, target=batch_labels.long())
+                        tm_auc_roc_micro.update(preds=logits, target=batch_labels.long())
                 valid_loss /= valid_steps
                 valid_roc_auc = compute_roc(valid_labels, preds)
 
                 valid_f1_micro_score = f1_micro.compute().item()
                 valid_f1_macro_score = f1_macro.compute().item()
-                valid_tm_auc_roc = tm_auc_roc.compute().item()
+                valid_tm_auc_roc_macro = tm_auc_roc_macro.compute().item()
+                valid_tm_auc_roc_micro = tm_auc_roc_micro.compute().item()
                 
                 print(
                     f"Epoch {epoch}: "
                     f"Train Loss = {train_loss:.4f}, "
-                    f"Train AUC (torchmetric) = {train_tm_auc_roc:.4f}, "
+                    f"Train AUC Macro (torchmetric) = {train_tm_auc_roc_macro:.4f}, "
+                    f"Train AUC Micro (torchmetric) = {train_tm_auc_roc_micro:.4f}, "
                     f"Train F1_micro = {train_f1_micro_score:.4f}, "
                     f"Train F1_macro = {train_f1_macro_score:.4f} | "
                     f"Valid Loss = {valid_loss:.4f}, "
                     f"Valid AUC (DeepGo) = {valid_roc_auc:.4f}, "
-                    f"Valid AUC (torchmetrics) = {valid_tm_auc_roc:.4f} "
+                    f"Valid AUC Macro (torchmetrics) = {valid_tm_auc_roc_macro:.4f} "
+                    f"Valid AUC Micro (torchmetrics) = {valid_tm_auc_roc_micro:.4f} "
                     f"Valid F1_micro = {valid_f1_micro_score:.4f}, "
                     f"Valid F1_macro = {valid_f1_macro_score:.4f}"
                 )
@@ -198,12 +207,14 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                 wandb.log({
                     'epoch': epoch,
                     'train_loss': train_loss,
-                    'train_auc': train_tm_auc_roc,
+                    'train macro auc (torchmetric)': train_tm_auc_roc_macro,
+                    'train micro auc (torchmetric)': train_tm_auc_roc_micro,
                     'train_micro': train_f1_micro_score,
                     'train_macro': train_f1_macro_score,
                     'valid_loss': valid_loss,
                     'valid_auc (deepgo)': valid_roc_auc,
-                    'valid_auc (torchmetric)': valid_tm_auc_roc,
+                    'valid macro auc (torchmetric)': valid_tm_auc_roc_macro,
+                    'valid micro auc (torchmetric)': valid_tm_auc_roc_micro,
                     'valid_macro': valid_f1_macro_score,
                     'valid_micro': valid_f1_micro_score,
                 })
@@ -224,7 +235,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
         preds = []
         f1_micro.reset()
         f1_macro.reset()
-        tm_auc_roc.reset()
+        tm_auc_roc_macro.reset()
+        tm_auc_roc_micro.reset()
         with ck.progressbar(length=test_steps, show_pos=True) as bar:
             for batch_features, batch_labels in test_loader:
                 bar.update(1)
@@ -236,20 +248,23 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
                 preds.append(logits.detach().cpu().numpy())
                 f1_macro.update(preds=logits, labels=batch_labels.long())
                 f1_micro.update(preds=logits, target=batch_labels.long())
-                tm_auc_roc.update(preds=logits, target=batch_labels.long())
+                tm_auc_roc_macro.update(preds=logits, target=batch_labels.long())
+                tm_auc_roc_micro.update(preds=logits, target=batch_labels.long())
             test_loss /= test_steps
         preds = np.concatenate(preds)
         roc_auc = compute_roc(test_labels, preds)
 
         test_f1_micro_score = f1_micro.compute().item()
         test_f1_macro_score = f1_macro.compute().item()
-        test_tm_auc_roc = tm_auc_roc.compute().item()
+        test_tm_auc_roc_macro = tm_auc_roc_macro.compute().item()
+        test_tm_auc_roc_micro = tm_auc_roc_micro.compute().item()
 
         print(
             f"Test Results: "
             f"Loss = {test_loss:.4f}, "
             f"AUC (Deepgo) = {roc_auc:.4f}, "
-            f"AUC (torchmetric) = {test_tm_auc_roc:.4f}, "
+            f"Macro AUC (torchmetric) = {test_tm_auc_roc_macro:.4f}, "
+            f"Mirco AUC (torchmetric) = {test_tm_auc_roc_micro:.4f}, "
             f"F1_micro = {test_f1_micro_score:.4f}, "
             f"F1_macro = {test_f1_macro_score:.4f}"
         )
@@ -257,7 +272,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
         wandb.log({
             'test_loss': test_loss,
             'test_auc (deepgo)': roc_auc,
-            'test_auc (torchmetric)': test_tm_auc_roc,
+            'test macro auc (torchmetric)': test_tm_auc_roc_macro,
+            'test micro auc (torchmetric)': test_tm_auc_roc_micro,
             'test_micro': test_f1_micro_score,
             'test_macro': test_f1_macro_score,
         })
