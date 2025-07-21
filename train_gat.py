@@ -1,24 +1,29 @@
+import copy
+import csv
+import math
+import random
+from functools import partial
+from itertools import cycle
+from multiprocessing import Pool
+
 import click as ck
+import dgl
+import numpy as np
 import pandas as pd
 import torch as th
-import numpy as np
-from torch import nn
+from torch import nn, optim
 from torch.nn import functional as F
-from torch import optim
-import copy
-from torch.utils.data import DataLoader, IterableDataset, TensorDataset
-from itertools import cycle
-import math
-from deepgo.torch_utils import FastTensorDataLoader
-import csv
 from torch.optim.lr_scheduler import MultiStepLR
-from deepgo.utils import Ontology, propagate_annots
-from deepgo.models import DeepGOGATModel
+from torch.utils.data import DataLoader, IterableDataset, TensorDataset
+from torchmetrics.classification import MultilabelAUROC, MultilabelF1Score
+
+import wandb
 from deepgo.data import load_normal_forms, load_ppi_data
 from deepgo.metrics import compute_roc
-from multiprocessing import Pool
-from functools import partial
-import dgl
+from deepgo.models import DeepGOGATModel
+from deepgo.torch_utils import FastTensorDataLoader
+from deepgo.utils import Ontology, propagate_annots
+from epoch_metrics import MacroF1
 
 
 @ck.command()
@@ -50,10 +55,31 @@ import dgl
 @ck.option(
     '--device', '-d', default='cuda:0',
     help='Device')
-def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epochs, load, device):
+@ck.option('--seed', '-s', default=0)
+def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epochs, load, device, seed):
     """
     This script is used to train DeepGOGAT models
     """
+    wandb.init(
+        project='deepgo2',
+        name=f'{model_name}_{ont}_{test_data_name}',
+        config={
+            'epochs': epochs,
+            'batch_size': batch_size,
+            'model_name': model_name,
+            'ontology': ont,
+            'test_data': test_data_name,
+            'device': device,
+        }
+    )
+    random.seed(seed)
+    np.random.seed(seed)
+    th.manual_seed(seed)
+    if th.cuda.is_available():
+        th.cuda.manual_seed_all(seed)
+        th.backends.cudnn.deterministic = True
+        th.backends.cudnn.benchmark = False
+
     if model_id is not None:
         model_name = f'{model_name}_{model_id}'
 
@@ -144,6 +170,12 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
     optimizer = th.optim.Adam(net.parameters(), lr=1e-3)
     scheduler = MultiStepLR(optimizer, milestones=[5, 10,], gamma=0.1)
 
+    f1_micro = MultilabelF1Score(num_labels=n_terms, average="micro").to(device=device)
+    f1_macro = MacroF1(num_labels=n_terms).to(device=device)
+    tm_auc_roc_macro = MultilabelAUROC(num_labels=n_terms).to(device=device)
+    tm_auc_roc_micro = MultilabelAUROC(num_labels=n_terms, average="micro").to(device=device)
+    
+
     best_loss = 10000.0
     if not load:
         print('Training the model')
@@ -151,6 +183,10 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
             net.train()
             train_loss = 0
             train_steps = int(math.ceil(len(train_nids) / batch_size))
+            f1_micro.reset()
+            f1_macro.reset()
+            tm_auc_roc_macro.reset()
+            tm_auc_roc_micro.reset()
             with ck.progressbar(length=train_steps, show_pos=True) as bar:
                 for input_nodes, output_nodes, blocks in train_dataloader:
                     bar.update(1)
@@ -164,7 +200,15 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
                     optimizer.zero_grad()
                     total_loss.backward()
                     optimizer.step()
-                    
+                    f1_macro.update(preds=logits, labels=batch_labels.long())
+                    f1_micro.update(preds=logits, target=batch_labels.long())
+                    tm_auc_roc_macro.update(preds=logits, target=batch_labels.long())
+                    tm_auc_roc_micro.update(preds=logits, target=batch_labels.long())
+
+            train_f1_micro_score = f1_micro.compute().item()
+            train_f1_macro_score = f1_macro.compute().item()
+            train_tm_auc_roc_macro = tm_auc_roc_macro.compute().item()
+            train_tm_auc_roc_micro = tm_auc_roc_micro.compute().item()   
             train_loss /= train_steps
             
             print('Validation')
@@ -173,6 +217,10 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
                 valid_steps = int(math.ceil(len(valid_nids) / batch_size))
                 valid_loss = 0
                 preds = []
+                f1_micro.reset()
+                f1_macro.reset()
+                tm_auc_roc_macro.reset()
+                tm_auc_roc_micro.reset()
                 with ck.progressbar(length=valid_steps, show_pos=True) as bar:
                     for input_nodes, output_nodes, blocks in valid_dataloader:
                         bar.update(1)
@@ -181,9 +229,48 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
                         batch_loss = F.binary_cross_entropy(logits, batch_labels)
                         valid_loss += batch_loss.detach().item()
                         preds = np.append(preds, logits.detach().cpu().numpy())
+                        f1_macro.update(preds=logits, labels=batch_labels.long())
+                        f1_micro.update(preds=logits, target=batch_labels.long())
+                        tm_auc_roc_macro.update(preds=logits, target=batch_labels.long())
+                        tm_auc_roc_micro.update(preds=logits, target=batch_labels.long())
                 valid_loss /= valid_steps
-                roc_auc = compute_roc(valid_labels, preds)
-                print(f'Epoch {epoch}: Loss - {train_loss}, Valid loss - {valid_loss}, AUC - {roc_auc}')
+                valid_roc_auc = compute_roc(valid_labels, preds)
+
+                valid_f1_micro_score = f1_micro.compute().item()
+                valid_f1_macro_score = f1_macro.compute().item()
+                valid_tm_auc_roc_macro = tm_auc_roc_macro.compute().item()
+                valid_tm_auc_roc_micro = tm_auc_roc_micro.compute().item()
+                
+                print(
+                    f"Epoch {epoch}: "
+                    f"Train Loss = {train_loss:.4f}, "
+                    f"Train AUC Macro (torchmetric) = {train_tm_auc_roc_macro:.4f}, "
+                    f"Train AUC Micro (torchmetric) = {train_tm_auc_roc_micro:.4f}, "
+                    f"Train F1_micro = {train_f1_micro_score:.4f}, "
+                    f"Train F1_macro = {train_f1_macro_score:.4f} | "
+                    f"Valid Loss = {valid_loss:.4f}, "
+                    f"Valid AUC (DeepGo) = {valid_roc_auc:.4f}, "
+                    f"Valid AUC Macro (torchmetrics) = {valid_tm_auc_roc_macro:.4f} "
+                    f"Valid AUC Micro (torchmetrics) = {valid_tm_auc_roc_micro:.4f} "
+                    f"Valid F1_micro = {valid_f1_micro_score:.4f}, "
+                    f"Valid F1_macro = {valid_f1_macro_score:.4f}"
+                )
+
+                wandb.log({
+                    'epoch': epoch,
+                    'train_loss': train_loss,
+                    'train macro auc (torchmetric)': train_tm_auc_roc_macro,
+                    'train micro auc (torchmetric)': train_tm_auc_roc_micro,
+                    'train_micro_f1': train_f1_micro_score,
+                    'train_macro_f1': train_f1_macro_score,
+                    'valid_loss': valid_loss,
+                    'valid_auc (deepgo)': valid_roc_auc,
+                    'valid macro auc (torchmetric)': valid_tm_auc_roc_macro,
+                    'valid micro auc (torchmetric)': valid_tm_auc_roc_micro,
+                    'valid_macro_f1': valid_f1_macro_score,
+                    'valid_micro_f1': valid_f1_micro_score,
+                })
+
             if valid_loss < best_loss:
                 best_loss = valid_loss
                 print('Saving model')
@@ -191,7 +278,6 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
 
             scheduler.step()
             
-        log_file.close()
 
     # Loading best model
     print('Loading the best model')
@@ -216,6 +302,10 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
         test_steps = int(math.ceil(len(test_nids) / batch_size))
         test_loss = 0
         preds = []
+        f1_micro.reset()
+        f1_macro.reset()
+        tm_auc_roc_macro.reset()
+        tm_auc_roc_micro.reset()
         with ck.progressbar(length=test_steps, show_pos=True) as bar:
             for input_nodes, output_nodes, blocks in test_dataloader:
                 bar.update(1)
@@ -224,10 +314,38 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
                 batch_loss = F.binary_cross_entropy(logits, batch_labels)
                 test_loss += batch_loss.detach().cpu().item()
                 preds.append(logits.detach().cpu().numpy())
+                f1_macro.update(preds=logits, labels=batch_labels.long())
+                f1_micro.update(preds=logits, target=batch_labels.long())
+                tm_auc_roc_macro.update(preds=logits, target=batch_labels.long())
+                tm_auc_roc_micro.update(preds=logits, target=batch_labels.long())
             test_loss /= test_steps
         preds = np.concatenate(preds)
         roc_auc = compute_roc(test_labels, preds)
-    print(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, AUC - {roc_auc}')
+        
+        test_f1_micro_score = f1_micro.compute().item()
+        test_f1_macro_score = f1_macro.compute().item()
+        test_tm_auc_roc_macro = tm_auc_roc_macro.compute().item()
+        test_tm_auc_roc_micro = tm_auc_roc_micro.compute().item()
+
+        print(
+            f"Test Results: "
+            f"Loss = {test_loss:.4f}, "
+            f"AUC (Deepgo) = {roc_auc:.4f}, "
+            f"Macro AUC (torchmetric) = {test_tm_auc_roc_macro:.4f}, "
+            f"Mirco AUC (torchmetric) = {test_tm_auc_roc_micro:.4f}, "
+            f"F1_micro = {test_f1_micro_score:.4f}, "
+            f"F1_macro = {test_f1_macro_score:.4f}"
+        )
+
+        wandb.log({
+            'test_loss': test_loss,
+            'test_auc (deepgo)': roc_auc,
+            'test macro auc (torchmetric)': test_tm_auc_roc_macro,
+            'test micro auc (torchmetric)': test_tm_auc_roc_micro,
+            'test_micro_f1': test_f1_micro_score,
+            'test_macro_f1': test_f1_macro_score,
+        })
+
     # Save the performance into a file
     with open(f'{data_root}/{ont}/valid_{model_name}.pf', 'w') as f:
         f.write(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, Test AUC - {roc_auc}\n')
