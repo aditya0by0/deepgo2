@@ -41,4 +41,4 @@ torchmetrics
 # Install DGL manually:
 # torch version is pinned to 2.4.0, we use cuda 12.1
 # https://www.dgl.ai/pages/start.html
-# pip install dgl==1.1.2 -f https://data.dgl.ai/wheels/cu121/torch-2.4.0.html
+# pip install --pre dgl -f https://data.dgl.ai/wheels-test/torch-2.4/cu121/repo.html
