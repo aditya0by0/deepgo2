@@ -102,10 +102,11 @@ def main(data_root, ont, test_data_name, batch_size, epochs, load, device, seed)
     optimizer = th.optim.Adam(net.parameters(), lr=1e-3)
     scheduler = MultiStepLR(optimizer, milestones=[1, 3,], gamma=0.1)
 
-    f1_micro = MultilabelF1Score(num_labels=n_terms, average="micro").to(device=device)
-    f1_macro = MacroF1(num_labels=n_terms).to(device=device)
-    tm_auc_roc_macro = MultilabelAUROC(num_labels=n_terms).to(device=device)
-    tm_auc_roc_micro = MultilabelAUROC(num_labels=n_terms, average="micro").to(device=device)
+    cpu_device = th.device('cpu')
+    f1_micro = MultilabelF1Score(num_labels=n_terms, average="micro").to(cpu_device)
+    f1_macro = MacroF1(num_labels=n_terms).to(cpu_device)
+    tm_auc_roc_macro = MultilabelAUROC(num_labels=n_terms).to(cpu_device)
+    tm_auc_roc_micro = MultilabelAUROC(num_labels=n_terms, average="micro").to(cpu_device)
 
     best_loss = 10000.0
     if not load:
