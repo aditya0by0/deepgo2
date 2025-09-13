@@ -1,3 +1,6 @@
+from torchmetrics.classification import MultilabelAUROC, MultilabelF1Score
+from epoch_metrics import MacroF1
+import torch
 import numpy as np
 import pandas as pd
 from sklearn.metrics import classification_report
@@ -48,9 +51,27 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
     spec_labels = test_df['exp_annotations'].values
     spec_labels = list(map(lambda x: set(filter(lambda y: y in go_set, x)), spec_labels))
     fmax_spec_match = 0
+    fmax_micro_score = 0.0
+    tmax_micro = 0.0
+    fmax_macro_score = 0.0
+    tmax_macro = 0.0
+    # tm_auc_roc_macro = 0.0 
+    # tmax_auc_roc_macro = 0.0
+    # tm_auc_roc_micro = 0.0
+    # tmax_auc_roc_micro = 0.0
+    n_terms = len(terms_dict)
     for t in range(0, 101):
         threshold = t / 100.0
         preds = [set() for _ in range(len(test_df))]
+
+        f1_micro = MultilabelF1Score(num_labels=n_terms, average="micro", threshold=threshold)
+        f1_macro = MacroF1(num_labels=n_terms, threshold=threshold)
+        
+        # ----- this MultilabelAUROC from torchmetrics can't be tuned on single threshold value -----
+        # Check https://lightning.ai/docs/torchmetrics/stable/classification/auroc.html#multilabelauroc
+        # tm_auc_roc_macro = MultilabelAUROC(num_labels=n_terms, thresholds=threshold)
+        # tm_auc_roc_micro = MultilabelAUROC(num_labels=n_terms, average="micro", thresholds=threshold)
+
         for i in range(len(test_df)):
             annots = set()
             above_threshold = np.argwhere(eval_preds[i] >= threshold).flatten()
@@ -61,7 +82,27 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
                 preds[i] = annots
                 continue
             preds[i] = annots
-            
+            f1_micro.update(torch.tensor(eval_preds[i]).unsqueeze(0), torch.tensor(labels[i]).unsqueeze(0))
+            f1_macro.update(torch.tensor(eval_preds[i]).unsqueeze(0), torch.tensor(labels[i]).unsqueeze(0))
+            # tm_auc_roc_macro.update(torch.tensor(eval_preds[i]).unsqueeze(0), torch.tensor(labels[i]).unsqueeze(0))
+            # tm_auc_roc_micro.update(torch.tensor(eval_preds[i]).unsqueeze(0), torch.tensor(labels[i]).unsqueeze(0))
+        f1_micro_score = f1_micro.compute().item()
+        f1_macro_score = f1_macro.compute().item()
+        # tm_auc_roc_macro_score = tm_auc_roc_macro.compute().item()
+        # tm_auc_roc_micro_score = tm_auc_roc_micro.compute().item()
+        if f1_micro_score > fmax_micro_score:
+            tmax_micro = threshold
+            fmax_micro_score = f1_micro_score
+        if f1_macro_score > fmax_macro_score:
+            tmax_macro = threshold
+            fmax_macro_score = f1_macro_score
+        # if tm_auc_roc_macro_score > tmax_auc_roc_macro:
+        #     tmax_auc_roc_macro = threshold
+        #     tm_auc_roc_macro = tm_auc_roc_macro_score
+        # if tm_auc_roc_micro_score > tmax_auc_roc_micro:
+        #     tmax_auc_roc_micro = threshold
+        #     tm_auc_roc_micro = tm_auc_roc_micro_score
+
         # Filter classes
         preds = list(map(lambda x: set(filter(lambda y: y in go_set, x)), preds))
         fscore, prec, rec, s, ru, mi, fps, fns, avg_ic, wf = evaluate_annotations(go, labels, preds)
@@ -80,13 +121,16 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
             wtmax = threshold
         if smin > s:
             smin = s
+
+    print(f'Fmax micro (torchmetrics) ({tmax_micro}): {fmax_micro_score}, Fmax macro (torchmetrics) ({tmax_macro}): {fmax_macro_score}')
+    # print(f'AUC ROC micro (torchmetrics) ({tmax_auc_roc_micro}): {tm_auc_roc_micro}, AUC ROC macro (torchmetrics) ({tmax_auc_roc_macro}): {tm_auc_roc_macro}')
+    
     precisions = np.array(precisions)
     recalls = np.array(recalls)
     sorted_index = np.argsort(recalls)
     recalls = recalls[sorted_index]
     precisions = precisions[sorted_index]
     aupr = np.trapz(precisions, recalls)
-    
 
     return fmax, smin, tmax, wfmax, wtmax, avg_auc, aupr, avgic, fmax_spec_match
 
