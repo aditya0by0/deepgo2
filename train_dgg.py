@@ -47,19 +47,20 @@ from epoch_metrics import MacroF1
     '--device', '-d', default='cuda:0',
     help='Device')
 @ck.option('--seed', '-s', default=0)
-def main(data_root, ont, test_data_name, batch_size, epochs, load, device, seed):
-    wandb.init(
-        project='deepgo2',
-        name=f'dgg_{ont}_{test_data_name}',
-        config={
-            'epochs': epochs,
-            'batch_size': batch_size,
-            'model_name': 'dgg',
-            'ontology': ont,
-            'test_data': test_data_name,
-            'device': device,
-        }
-    )
+def main(data_root, ont, test_data_name, batch_size, epochs, load, device, seed, use_wandb=True):
+    if use_wandb:
+        wandb.init(
+            project='deepgo2',
+            name=f'dgg_{ont}_{test_data_name}',
+            config={
+                'epochs': epochs,
+                'batch_size': batch_size,
+                'model_name': 'dgg',
+                'ontology': ont,
+                'test_data': test_data_name,
+                'device': device,
+            }
+        )
 
     import random
     random.seed(seed)
@@ -211,21 +212,22 @@ def main(data_root, ont, test_data_name, batch_size, epochs, load, device, seed)
                     f"Valid F1_micro = {valid_f1_micro_score:.4f}, "
                     f"Valid F1_macro = {valid_f1_macro_score:.4f}"
                 )
-
-                wandb.log({
-                    'epoch': epoch,
-                    'train_loss': train_loss,
-                    'train macro auc (torchmetric)': train_tm_auc_roc_macro,
-                    'train micro auc (torchmetric)': train_tm_auc_roc_micro,
-                    'train_micro_f1': train_f1_micro_score,
-                    'train_macro_f1': train_f1_macro_score,
-                    'valid_loss': valid_loss,
-                    'valid_auc (deepgo)': roc_auc,
-                    'valid macro auc (torchmetric)': valid_tm_auc_roc_macro,
-                    'valid micro auc (torchmetric)': valid_tm_auc_roc_micro,
-                    'valid_macro_f1': valid_f1_macro_score,
-                    'valid_micro_f1': valid_f1_micro_score,
-                })
+                
+                if use_wandb:
+                    wandb.log({
+                        'epoch': epoch,
+                        'train_loss': train_loss,
+                        'train macro auc (torchmetric)': train_tm_auc_roc_macro,
+                        'train micro auc (torchmetric)': train_tm_auc_roc_micro,
+                        'train_micro_f1': train_f1_micro_score,
+                        'train_macro_f1': train_f1_macro_score,
+                        'valid_loss': valid_loss,
+                        'valid_auc (deepgo)': roc_auc,
+                        'valid macro auc (torchmetric)': valid_tm_auc_roc_macro,
+                        'valid micro auc (torchmetric)': valid_tm_auc_roc_micro,
+                        'valid_macro_f1': valid_f1_macro_score,
+                        'valid_micro_f1': valid_f1_micro_score,
+                    })
 
             if valid_loss < best_loss:
                 best_loss = valid_loss
@@ -278,15 +280,16 @@ def main(data_root, ont, test_data_name, batch_size, epochs, load, device, seed)
             f"F1_macro = {test_f1_macro_score:.4f}"
         )
 
-        wandb.log({
-            'test_loss': test_loss,
-            'test_auc (deepgo)': roc_auc,
-            'test macro auc (torchmetric)': test_tm_auc_roc_macro,
-            'test micro auc (torchmetric)': test_tm_auc_roc_micro,
-            'test_micro_f1': test_f1_micro_score,
-            'test_macro_f1': test_f1_macro_score,
-        })
-        wandb.finish()
+        if use_wandb:
+            wandb.log({
+                'test_loss': test_loss,
+                'test_auc (deepgo)': roc_auc,
+                'test macro auc (torchmetric)': test_tm_auc_roc_macro,
+                'test micro auc (torchmetric)': test_tm_auc_roc_micro,
+                'test_micro_f1': test_f1_micro_score,
+                'test_macro_f1': test_f1_macro_score,
+            })
+            wandb.finish()
 
     preds = list(preds)
     # Propagate scores using ontology structure
