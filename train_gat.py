@@ -56,22 +56,24 @@ from epoch_metrics import MacroF1
     '--device', '-d', default='cuda:0',
     help='Device')
 @ck.option('--seed', '-s', default=0)
-def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epochs, load, device, seed):
+def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epochs, load, device, seed, use_wandb=True):
     """
     This script is used to train DeepGOGAT models
     """
-    wandb.init(
-        project='deepgo2',
-        name=f'{model_name}_{ont}_{test_data_name}',
-        config={
-            'epochs': epochs,
-            'batch_size': batch_size,
-            'model_name': model_name,
-            'ontology': ont,
-            'test_data': test_data_name,
-            'device': device,
-        }
-    )
+    if use_wandb:
+        wandb.init(
+            project='deepgo2',
+            name=f'{model_name}_{ont}_{test_data_name}',
+            config={
+                'epochs': epochs,
+                'batch_size': batch_size,
+                'model_name': model_name,
+                'ontology': ont,
+                'test_data': test_data_name,
+                'device': device,
+            }
+        )
+    
     random.seed(seed)
     np.random.seed(seed)
     th.manual_seed(seed)
@@ -256,21 +258,21 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
                     f"Valid F1_micro = {valid_f1_micro_score:.4f}, "
                     f"Valid F1_macro = {valid_f1_macro_score:.4f}"
                 )
-
-                wandb.log({
-                    'epoch': epoch,
-                    'train_loss': train_loss,
-                    'train macro auc (torchmetric)': train_tm_auc_roc_macro,
-                    'train micro auc (torchmetric)': train_tm_auc_roc_micro,
-                    'train_micro_f1': train_f1_micro_score,
-                    'train_macro_f1': train_f1_macro_score,
-                    'valid_loss': valid_loss,
-                    'valid_auc (deepgo)': valid_roc_auc,
-                    'valid macro auc (torchmetric)': valid_tm_auc_roc_macro,
-                    'valid micro auc (torchmetric)': valid_tm_auc_roc_micro,
-                    'valid_macro_f1': valid_f1_macro_score,
-                    'valid_micro_f1': valid_f1_micro_score,
-                })
+                if use_wandb:
+                    wandb.log({
+                        'epoch': epoch,
+                        'train_loss': train_loss,
+                        'train macro auc (torchmetric)': train_tm_auc_roc_macro,
+                        'train micro auc (torchmetric)': train_tm_auc_roc_micro,
+                        'train_micro_f1': train_f1_micro_score,
+                        'train_macro_f1': train_f1_macro_score,
+                        'valid_loss': valid_loss,
+                        'valid_auc (deepgo)': valid_roc_auc,
+                        'valid macro auc (torchmetric)': valid_tm_auc_roc_macro,
+                        'valid micro auc (torchmetric)': valid_tm_auc_roc_micro,
+                        'valid_macro_f1': valid_f1_macro_score,
+                        'valid_micro_f1': valid_f1_micro_score,
+                    })
 
             if valid_loss < best_loss:
                 best_loss = valid_loss
@@ -337,15 +339,15 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
             f"F1_micro = {test_f1_micro_score:.4f}, "
             f"F1_macro = {test_f1_macro_score:.4f}"
         )
-
-        wandb.log({
-            'test_loss': test_loss,
-            'test_auc (deepgo)': roc_auc,
-            'test macro auc (torchmetric)': test_tm_auc_roc_macro,
-            'test micro auc (torchmetric)': test_tm_auc_roc_micro,
-            'test_micro_f1': test_f1_micro_score,
-            'test_macro_f1': test_f1_macro_score,
-        })
+        if use_wandb:
+            wandb.log({
+                'test_loss': test_loss,
+                'test_auc (deepgo)': roc_auc,
+                'test macro auc (torchmetric)': test_tm_auc_roc_macro,
+                'test micro auc (torchmetric)': test_tm_auc_roc_micro,
+                'test_micro_f1': test_f1_micro_score,
+                'test_macro_f1': test_f1_macro_score,
+            })
 
     # Save the performance into a file
     with open(f'{data_root}/{ont}/valid_{model_name}.pf', 'w') as f:
@@ -359,6 +361,9 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
     test_df['preds'] = preds
 
     test_df.to_pickle(out_file)
+
+    if use_wandb:
+        wandb.finish()
     
 
 if __name__ == '__main__':
