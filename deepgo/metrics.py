@@ -1,19 +1,22 @@
-from torchmetrics.classification import MultilabelAUROC, MultilabelF1Score
-from epoch_metrics import MacroF1
-import torch
+import logging
+import math
+import sys
+import time
+from collections import deque
+
 import numpy as np
 import pandas as pd
-from sklearn.metrics import classification_report
-from sklearn.metrics.pairwise import cosine_similarity
-import sys
-from collections import deque
-import time
-import logging
-from sklearn.metrics import roc_curve, auc, matthews_corrcoef
-from scipy.spatial import distance
+import torch
 from scipy import sparse
-import math
-from .utils import NAMESPACES, FUNC_DICT
+from scipy.spatial import distance
+from sklearn.metrics import auc, classification_report, matthews_corrcoef, roc_curve
+from sklearn.metrics.pairwise import cosine_similarity
+from torchmetrics.classification import MultilabelAUROC, MultilabelF1Score
+
+from epoch_metrics import MacroF1
+
+from .utils import FUNC_DICT, NAMESPACES
+
 
 def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
     labels = np.zeros((len(test_df), len(terms_dict)), dtype=np.float32)
@@ -31,6 +34,8 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
             roc_auc  = compute_roc(labels[:, i], eval_preds[:, i])
             total_sum += roc_auc
 
+    labels_tensor = torch.tensor(labels, dtype=torch.int64)
+    eval_preds_tensor = torch.tensor(eval_preds)
     avg_auc = total_sum / total_n
     
     print('Computing Fmax')
@@ -55,10 +60,6 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
     tmax_micro = 0.0
     fmax_macro_score = 0.0
     tmax_macro = 0.0
-    # tm_auc_roc_macro = 0.0 
-    # tmax_auc_roc_macro = 0.0
-    # tm_auc_roc_micro = 0.0
-    # tmax_auc_roc_micro = 0.0
     n_terms = len(terms_dict)
     for t in range(0, 101):
         threshold = t / 100.0
@@ -82,26 +83,17 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
                 preds[i] = annots
                 continue
             preds[i] = annots
-            f1_micro.update(torch.tensor(eval_preds[i]).unsqueeze(0), torch.tensor(labels[i]).unsqueeze(0))
-            f1_macro.update(torch.tensor(eval_preds[i]).unsqueeze(0), torch.tensor(labels[i]).unsqueeze(0))
-            # tm_auc_roc_macro.update(torch.tensor(eval_preds[i]).unsqueeze(0), torch.tensor(labels[i]).unsqueeze(0))
-            # tm_auc_roc_micro.update(torch.tensor(eval_preds[i]).unsqueeze(0), torch.tensor(labels[i]).unsqueeze(0))
+
+        f1_micro.update(eval_preds_tensor, labels_tensor)
+        f1_macro.update(eval_preds_tensor, labels_tensor)
         f1_micro_score = f1_micro.compute().item()
         f1_macro_score = f1_macro.compute().item()
-        # tm_auc_roc_macro_score = tm_auc_roc_macro.compute().item()
-        # tm_auc_roc_micro_score = tm_auc_roc_micro.compute().item()
         if f1_micro_score > fmax_micro_score:
             tmax_micro = threshold
             fmax_micro_score = f1_micro_score
         if f1_macro_score > fmax_macro_score:
             tmax_macro = threshold
             fmax_macro_score = f1_macro_score
-        # if tm_auc_roc_macro_score > tmax_auc_roc_macro:
-        #     tmax_auc_roc_macro = threshold
-        #     tm_auc_roc_macro = tm_auc_roc_macro_score
-        # if tm_auc_roc_micro_score > tmax_auc_roc_micro:
-        #     tmax_auc_roc_micro = threshold
-        #     tm_auc_roc_micro = tm_auc_roc_micro_score
 
         # Filter classes
         preds = list(map(lambda x: set(filter(lambda y: y in go_set, x)), preds))
@@ -123,7 +115,6 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
             smin = s
 
     print(f'Fmax micro (torchmetrics) ({tmax_micro}): {fmax_micro_score}, Fmax macro (torchmetrics) ({tmax_macro}): {fmax_macro_score}')
-    # print(f'AUC ROC micro (torchmetrics) ({tmax_auc_roc_micro}): {tm_auc_roc_micro}, AUC ROC macro (torchmetrics) ({tmax_auc_roc_macro}): {tm_auc_roc_macro}')
     
     precisions = np.array(precisions)
     recalls = np.array(recalls)
