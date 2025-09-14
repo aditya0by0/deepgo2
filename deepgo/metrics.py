@@ -114,6 +114,7 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
         if smin > s:
             smin = s
 
+    print("------ Our metrics -------------------")
     print(f'Fmax micro (torchmetrics) : {fmax_micro_score}, threshold: {tmax_micro}')
     print(f'Fmax macro (torchmetrics) : {fmax_macro_score}, threshold: {tmax_macro}')
     print()

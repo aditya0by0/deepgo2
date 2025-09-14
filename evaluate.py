@@ -1,20 +1,21 @@
 #!/usr/bin/env python
 
+import logging
+import math
+import sys
+import time
+from collections import deque
+
+import click as ck
 import numpy as np
 import pandas as pd
-import click as ck
-from sklearn.metrics import classification_report
-from sklearn.metrics.pairwise import cosine_similarity
-import sys
-from collections import deque
-import time
-import logging
-from sklearn.metrics import roc_curve, auc, matthews_corrcoef
-from scipy.spatial import distance
 from scipy import sparse
-import math
-from deepgo.utils import FUNC_DICT, Ontology, NAMESPACES, EXP_CODES
+from scipy.spatial import distance
+from sklearn.metrics import auc, classification_report, matthews_corrcoef, roc_curve
+from sklearn.metrics.pairwise import cosine_similarity
+
 from deepgo.metrics import compute_metrics
+from deepgo.utils import EXP_CODES, FUNC_DICT, NAMESPACES, Ontology
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
@@ -71,6 +72,7 @@ def main(data_root, ont, model_name, test_data_name):
     fmax, smin, tmax, wfmax, wtmax, avg_auc, aupr, avgic, fmax_spec_match = compute_metrics(
         test_df, go, terms_dict, terms, ont, eval_preds)
     print(model_name, ont)
+    print("------ DeepGO Metrics ----------")
     print(f'Fmax: {fmax:0.3f}, Smin: {smin:0.3f}, threshold: {tmax}, spec: {fmax_spec_match}')
     print(f'WFmax: {wfmax:0.3f}, threshold: {wtmax}')
     print(f'AUC: {avg_auc:0.3f}')
