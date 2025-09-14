@@ -114,8 +114,10 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
         if smin > s:
             smin = s
 
-    print(f'Fmax micro (torchmetrics) ({tmax_micro}): {fmax_micro_score}, Fmax macro (torchmetrics) ({tmax_macro}): {fmax_macro_score}')
-    
+    print(f'Fmax micro (torchmetrics) : {fmax_micro_score}, threshold: {tmax_micro}')
+    print(f'Fmax macro (torchmetrics) : {fmax_macro_score}, threshold: {tmax_macro}')
+    print()
+
     precisions = np.array(precisions)
     recalls = np.array(recalls)
     sorted_index = np.argsort(recalls)
