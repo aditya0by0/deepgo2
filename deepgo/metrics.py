@@ -1,16 +1,22 @@
+import logging
+import math
+import sys
+import time
+from collections import deque
+
 import numpy as np
 import pandas as pd
-from sklearn.metrics import classification_report
-from sklearn.metrics.pairwise import cosine_similarity
-import sys
-from collections import deque
-import time
-import logging
-from sklearn.metrics import roc_curve, auc, matthews_corrcoef
-from scipy.spatial import distance
+import torch
 from scipy import sparse
-import math
-from .utils import NAMESPACES, FUNC_DICT
+from scipy.spatial import distance
+from sklearn.metrics import auc, classification_report, matthews_corrcoef, roc_curve
+from sklearn.metrics.pairwise import cosine_similarity
+from torchmetrics.classification import MultilabelAUROC, MultilabelF1Score
+
+from epoch_metrics import MacroF1
+
+from .utils import FUNC_DICT, NAMESPACES
+
 
 def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
     labels = np.zeros((len(test_df), len(terms_dict)), dtype=np.float32)
@@ -28,6 +34,8 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
             roc_auc  = compute_roc(labels[:, i], eval_preds[:, i])
             total_sum += roc_auc
 
+    labels_tensor = torch.tensor(labels, dtype=torch.int64)
+    eval_preds_tensor = torch.tensor(eval_preds)
     avg_auc = total_sum / total_n
     
     print('Computing Fmax')
@@ -48,9 +56,23 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
     spec_labels = test_df['exp_annotations'].values
     spec_labels = list(map(lambda x: set(filter(lambda y: y in go_set, x)), spec_labels))
     fmax_spec_match = 0
+    fmax_micro_score = 0.0
+    tmax_micro = 0.0
+    fmax_macro_score = 0.0
+    tmax_macro = 0.0
+    n_terms = len(terms_dict)
     for t in range(0, 101):
         threshold = t / 100.0
         preds = [set() for _ in range(len(test_df))]
+
+        f1_micro = MultilabelF1Score(num_labels=n_terms, average="micro", threshold=threshold)
+        f1_macro = MacroF1(num_labels=n_terms, threshold=threshold)
+        
+        # ----- this MultilabelAUROC from torchmetrics can't be tuned on single threshold value -----
+        # Check https://lightning.ai/docs/torchmetrics/stable/classification/auroc.html#multilabelauroc
+        # tm_auc_roc_macro = MultilabelAUROC(num_labels=n_terms, thresholds=threshold)
+        # tm_auc_roc_micro = MultilabelAUROC(num_labels=n_terms, average="micro", thresholds=threshold)
+
         for i in range(len(test_df)):
             annots = set()
             above_threshold = np.argwhere(eval_preds[i] >= threshold).flatten()
@@ -61,7 +83,18 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
                 preds[i] = annots
                 continue
             preds[i] = annots
-            
+
+        f1_micro.update(eval_preds_tensor, labels_tensor)
+        f1_macro.update(eval_preds_tensor, labels_tensor)
+        f1_micro_score = f1_micro.compute().item()
+        f1_macro_score = f1_macro.compute().item()
+        if f1_micro_score > fmax_micro_score:
+            tmax_micro = threshold
+            fmax_micro_score = f1_micro_score
+        if f1_macro_score > fmax_macro_score:
+            tmax_macro = threshold
+            fmax_macro_score = f1_macro_score
+
         # Filter classes
         preds = list(map(lambda x: set(filter(lambda y: y in go_set, x)), preds))
         fscore, prec, rec, s, ru, mi, fps, fns, avg_ic, wf = evaluate_annotations(go, labels, preds)
@@ -80,13 +113,18 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
             wtmax = threshold
         if smin > s:
             smin = s
+
+    print("------ Our metrics -------------------")
+    print(f'Fmax micro (torchmetrics) : {fmax_micro_score}, threshold: {tmax_micro}')
+    print(f'Fmax macro (torchmetrics) : {fmax_macro_score}, threshold: {tmax_macro}')
+    print()
+
     precisions = np.array(precisions)
     recalls = np.array(recalls)
     sorted_index = np.argsort(recalls)
     recalls = recalls[sorted_index]
     precisions = precisions[sorted_index]
     aupr = np.trapz(precisions, recalls)
-    
 
     return fmax, smin, tmax, wfmax, wtmax, avg_auc, aupr, avgic, fmax_spec_match
 
